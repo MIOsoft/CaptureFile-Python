@@ -1,0 +1,7 @@
+# development only dependencies
+black
+jupyter
+lazydocs
+mypy
+nbconvert
+pytest

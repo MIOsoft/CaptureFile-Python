@@ -1,0 +1,26 @@
+{
+    "python.analysis.extraPaths": ["${workspaceFolder}/CaptureFile"],
+    "jupyter.notebookFileRoot": "${workspaceFolder}/CaptureFile",
+    "python.linting.pylintEnabled": false,
+    "python.linting.enabled": true,
+    "editor.renderWhitespace": "trailing",
+    "cSpell.ignoreWords": [],
+    "cSpell.words": [],
+    "terminal.integrated.env.osx": {
+      "PYTHONPATH": "${env:PYTHONPATH}:${workspaceFolder}/CaptureFile"
+    },
+    "terminal.integrated.env.linux": {
+      "PYTHONPATH": "${env:PYTHONPATH}:${workspaceFolder}/CaptureFile"
+    },
+    "terminal.integrated.env.windows": {
+      "PYTHONPATH": "${env:PYTHONPATH};${workspaceFolder}/CaptureFile"
+    },
+    "python.envFile": "${workspaceFolder}/.env",
+    "python.linting.mypyEnabled": true,
+    "python.testing.pytestArgs": ["tests"],
+    "python.testing.unittestEnabled": false,
+    "python.testing.nosetestsEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "editor.bracketPairColorization.enabled": true
+  }
+  
