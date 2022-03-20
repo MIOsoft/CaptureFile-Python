@@ -352,7 +352,8 @@ class CaptureFile:
                 delta = (nodes[0].serial_number - nodes[1].serial_number) & 0xFFFFFFFF
                 if delta not in (1, 0xFFFFFFFF):
                     raise InvalidCaptureFile(
-                        "Invalid capture file -- master nodes are valid but have non-consecutive serial numbers."
+                        "Invalid capture file -- master nodes are valid but have"
+                        " non-consecutive serial numbers."
                     )
                 current_master_node_index = 0 if delta == 1 else 1
             else:
@@ -421,14 +422,14 @@ class CaptureFile:
         else:
             # we are probably on some Unix variant
             # added comments below to suppress my-py errors when we are viewing code on Windows
-            lock_type = fcntl.LOCK_EX if self.to_write else fcntl.LOCK_SH
+            lock_type = fcntl.LOCK_EX if self.to_write else fcntl.LOCK_SH  # type: ignore[attr-defined]
             lock_mode = lock_type if lock else fcntl.LOCK_UN  # type: ignore[attr-defined]
-            fcntl.lockf(
+            fcntl.lockf(  # type: ignore[attr-defined]
                 self._file.fileno(),
                 lock_mode,
                 lock_size,
                 self._config.page_size,
-            )  # type: ignore[attr-defined]
+            )
 
     def get_metadata(self, /) -> Optional[bytes]:
         """Returns the binary metadata that was stored in the capture file on
@@ -481,7 +482,8 @@ class CaptureFile:
 
         if not self.to_write:
             raise CaptureFileNotOpenForWrite(
-                f'Cannot set the metadata of "{self.file_name}" because it is not open for writting.'
+                f'Cannot set the metadata of "{self.file_name}" because it is not open'
+                " for writting."
             )
 
         self._metadata = new_metadata
@@ -533,7 +535,8 @@ class CaptureFile:
 
         if not self._file:
             raise CaptureFileNotOpen(
-                f'Cannot set iterate over the records of "{self.file_name}" because it is not open.'
+                f'Cannot set iterate over the records of "{self.file_name}" because it'
+                " is not open."
             )
 
         if starting_record_number < 1:
@@ -801,7 +804,8 @@ class CaptureFile:
 
         if not self.to_write:
             raise CaptureFileNotOpenForWrite(
-                f'Cannot add a record to "{self.file_name}" because it is not open for writting.'
+                f'Cannot add a record to "{self.file_name}" because it is not open for'
+                " writting."
             )
 
         self._current_master_node.rightmost_path.add_child_to_rightmost_node(
@@ -950,8 +954,8 @@ class CaptureFileConfiguration:
 
         if version > cls.current_version:
             raise InvalidCaptureFile(
-                f"{file.name} was created in version {version} format."
-                f" The highest version supported by this program is {cls.current_version}."
+                f"{file.name} was created in version {version} format. The highest"
+                f" version supported by this program is {cls.current_version}."
             )
         return cls(version, page_size, compression_block_size, fan_out)
 
