@@ -555,7 +555,7 @@ class CaptureFile:
             starting_record_number - 1,
             rightmost_path,
             height,
-            self._config.fan_out**height,
+            self._config.fan_out ** height,
         )
 
     def _record_generator(
@@ -643,35 +643,36 @@ class CaptureFile:
             raise IndexError
         rightmost_nodes = self._current_master_node.rightmost_path.rightmost_nodes
         # Use "reversed" so we start at the root instead of the leaves
-        nodes = reversed(rightmost_nodes)
-        path = reversed(
-            list(
-                compute_path(
-                    # 1 is subtracted from record_number because Python is
-                    # 0-based while CaptureFile records start at 1
-                    record_number - 1,
-                    len(rightmost_nodes),
-                    self._config.fan_out,
-                )
+        root_to_leaf_rightmost_nodes = reversed(rightmost_nodes)
+        root_to_leaf_path = reversed(
+            leaf_to_root_path(
+                # 1 is subtracted from record_number because Python is
+                # 0-based while CaptureFile records start at 1
+                record_number - 1,
+                len(rightmost_nodes),
+                self._config.fan_out,
             )
         )
 
         # skip nodes as long as path follows rightmost nodes.
-        while (child_index := next(path)) == len((node := next(nodes)).children):
+        while (child_index := next(root_to_leaf_path)) == len(
+            (current_rightmost_node := next(root_to_leaf_rightmost_nodes)).children
+        ):
             pass
 
         # get first persistent child's data cooridnates. This child will refer
         # to either the record or the root of a perfect sub-tree of which no
         # decendant can be a rightmost node of the top level tree.
-        child = node.children[child_index]
+        current_child_coordinates = current_rightmost_node.children[child_index]
 
         # iterate through the remainder of the path of child indexes until we
         # arrive at the data coordinates of the record
-        for child_index in path:
-            child_full_node = self._full_node_cache(child)
-            child = child_full_node[child_index]
+        for child_index in root_to_leaf_path:
+            current_child_coordinates = self._full_node_cache(
+                current_child_coordinates
+            )[child_index]
 
-        return child.record(self)
+        return current_child_coordinates.record(self)
 
     def record_count(self, /) -> int:
         """Returns the number of records available when the file was opened or
@@ -1387,11 +1388,14 @@ class InvalidCaptureFile(Exception):
     pass
 
 
-def compute_path(position: int, height: int, fan_out: int, /):
+def leaf_to_root_path(position: int, height: int, fan_out: int, /) -> List[int]:
     """Compute the path of child indexes from the leaf through the nodes to the
     root."""
 
-    while height > 0:
-        height -= 1
+    path = [0] * height
+
+    for i in range(height):
         position, child_index = divmod(position, fan_out)
-        yield child_index
+        path[i] = child_index
+
+    return path
