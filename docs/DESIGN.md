@@ -160,7 +160,7 @@ with up to fan_out children.
 Once a node becomes full, it is written to the end of the compression block as a
 series of fan_out DataCoordinates. The now-persistent full node's DataCoordinate
 is added to its parent. If the node was the root, then a new parent node is
-created and this DataCoordinate is added to the new parent.
+created and the full node's DataCoordinate is added to the new parent.
 
 As a result, there is only ever one node, RightmostNode, that is not full per
 level of the tree.
@@ -173,6 +173,17 @@ A RightmostNode does not directly refer to its child RightmostNode, since the
 children are locations (DataCoordinates) and a RightmostNode will not have a
 location until it is full and written out. Instead, the rightmost child can be
 found in the RightmostPath at the parent's height - 1.
+
+The index tree is stored with one RightmostNode from each level written to the
+master node such that these nodes trace the path of the last write location.
+This means all RightmostNodes can be modified and are in the master node, while
+all the other nodes are full and never modified again.
+
+The full nodes are all referenced by their parent node, but the "in-progress"
+partially-full RightmostNodes are not, which is why they are kept in a list in
+the MasterNode. They can be found simply because there is exactly one
+RightmostNode per level, since there is only one in-progress partially-full node
+per level.
 
 ## Selection of default fan out
 
@@ -201,14 +212,3 @@ can store 10 levels of RightmostNodes in the available 4060 bytes of the
 MasterNode. So the total number of records we can index with the default fan_out
 of 32 and the default page_size of 4096 is: (31 x 32⁹) + (31 x 32⁸) ... + (31 x
 32) + 31 = 1,125,899,906,842,623 records or over 1 quadrillion records.
-
-The tree is stored with one RightmostNode from each level written to the master
-node such that these nodes trace the path of the last write location. This means
-all RightmostNodes can be modified and are in the master node, while all the
-other nodes are full and never modified again.
-
-The full nodes are all referenced by their parent node, but the "in-progress"
-partially-full RightmostNodes are not, which is why they are kept in a list in
-the MasterNode. They can be found simply because there is exactly one
-RightmostNode per level, since there is only one in-progress partially-full node
-per level.
