@@ -109,6 +109,13 @@ class CaptureFile:
             self._new_file(initial_metadata)
         self.open(to_write)
 
+    def __str__(self):
+        if self._file:
+            status = f'opened for {"writing" if self.to_write else "reading"}'
+        else:
+            status = "currently closed but last seen"
+        return f'"{self._file_name}" {status} with {self._record_count:,} records'
+
     def open(self, to_write: bool = False):
         """Opens this CaptureFile instance for reading or writing, depending on
         the value of `to_write`.
@@ -655,10 +662,11 @@ class CaptureFile:
         )
 
         # skip nodes as long as path follows rightmost nodes.
-        while (child_index := next(root_to_leaf_path)) == len(
-            (current_rightmost_node := next(root_to_leaf_rightmost_nodes)).children
+        for child_index, current_rightmost_node in zip(
+            root_to_leaf_path, root_to_leaf_rightmost_nodes
         ):
-            pass
+            if child_index != len(current_rightmost_node.children):
+                break
 
         # get first persistent child's data cooridnates. This child will refer
         # to either the record or the root of a perfect sub-tree of which no
@@ -1393,9 +1401,7 @@ def leaf_to_root_path(position: int, height: int, fan_out: int, /) -> List[int]:
     root."""
 
     path = [0] * height
-
     for i in range(height):
-        position, child_index = divmod(position, fan_out)
-        path[i] = child_index
+        position, path[i] = divmod(position, fan_out)
 
     return path

@@ -16,6 +16,16 @@ def test_new_file():
     assert cf.record_count() == 0
     cf.close()
 
+def test_str():
+    with CaptureFile(file_name_1, to_write=True, force_new_empty_file=True) as cf:
+        for i in range(1, 10001):
+            cf.add_record(f"Hey this is my record {i:,}")
+        LOGGER.info(str(cf))
+        cf.close()
+        LOGGER.info(str(cf))
+        cf.open()
+        LOGGER.info(str(cf))
+        
 
 def test_record_out_of_range():
     cf = CaptureFile(file_name_1, to_write=True, force_new_empty_file=True)
