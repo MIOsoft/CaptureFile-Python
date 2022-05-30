@@ -71,7 +71,7 @@ class CaptureFile:
     """For in-process double checking to prevent multiple to-write opens."""
 
     file_name: str
-    to_write: InitVar[bool] = False
+    to_write: bool = False
     initial_metadata: InitVar[Optional[bytes]] = None
     force_new_empty_file: InitVar[bool] = False
     encoding: Optional[str] = "utf_8"
@@ -96,7 +96,6 @@ class CaptureFile:
 
     def __post_init__(
         self,
-        to_write: bool,
         initial_metadata: Optional[bytes],
         force_new_empty_file: bool,
     ):
@@ -105,9 +104,9 @@ class CaptureFile:
 
         self._file_name = Path(self.file_name)
 
-        if force_new_empty_file or (to_write and not self._file_name.is_file()):
+        if force_new_empty_file or (self.to_write and not self._file_name.is_file()):
             self._new_file(initial_metadata)
-        self.open(to_write)
+        self.open(self.to_write)
 
     def __str__(self):
         if self._file:
