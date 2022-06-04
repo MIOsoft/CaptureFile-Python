@@ -14,9 +14,9 @@ from shutil import move
 from struct import Struct
 from sys import modules
 from tempfile import NamedTemporaryFile
-from threading import Semaphore
+from threading import Semaphore, Lock
 from time import sleep
-from typing import IO, ClassVar, Generator, List, Optional, Set, Tuple, Union
+from typing import IO, ClassVar, Dict, Generator, List, Optional, Set, Tuple, Union
 from zlib import compress, crc32, decompress
 
 try:
@@ -70,11 +70,17 @@ class CaptureFile:
     _filenames_opened_for_write: ClassVar[Set[Path]] = set()
     """For in-process double checking to prevent multiple to-write opens."""
 
+    _filenames_with_master_node_lock_sem: ClassVar[Semaphore] = Semaphore()
+    _filenames_with_master_node_lock: ClassVar[
+        Dict[Path, "ReferenceCountedLock"]
+    ] = dict()
+
     file_name: str
     to_write: bool = False
     initial_metadata: InitVar[Optional[bytes]] = None
     force_new_empty_file: InitVar[bool] = False
     encoding: Optional[str] = "utf_8"
+    use_os_file_locking: bool = False
 
     _file_name: Path = field(init=False)
     """A "Path" instance of file_name set during __post_init__"""
@@ -88,6 +94,8 @@ class CaptureFile:
     _compression_block: "BytesStream" = field(init=False)
 
     _current_master_node: "MasterNode" = field(init=False)
+    
+    _new_is_in_progress: bool = field(init=False)
 
     _record_count: int = field(init=False)
 
@@ -105,7 +113,9 @@ class CaptureFile:
         self._file_name = Path(self.file_name)
 
         if force_new_empty_file or (self.to_write and not self._file_name.is_file()):
+            self._new_is_in_progress = True
             self._new_file(initial_metadata)
+        self._new_is_in_progress = False
         self.open(self.to_write)
 
     def __str__(self):
@@ -167,6 +177,15 @@ class CaptureFile:
                     )
                 CaptureFile._filenames_opened_for_write.add(self._file_name)
 
+        with CaptureFile._filenames_with_master_node_lock_sem:
+            if self._file_name not in CaptureFile._filenames_with_master_node_lock:
+                CaptureFile._filenames_with_master_node_lock[
+                    self._file_name
+                ] = ReferenceCountedLock()
+            CaptureFile._filenames_with_master_node_lock[
+                self._file_name
+            ].add_reference()
+
         self._config = CaptureFileConfiguration.read(self._file)
         self.refresh()
 
@@ -183,6 +202,14 @@ class CaptureFile:
             if self.to_write:
                 with CaptureFile._filenames_opened_for_write_sem:
                     CaptureFile._filenames_opened_for_write.remove(self._file_name)
+            if not self._new_is_in_progress:
+                # Master node locks are not used for new files since the
+                # temporary file cannot be in use by any other process
+                with CaptureFile._filenames_with_master_node_lock_sem:
+                    if CaptureFile._filenames_with_master_node_lock[
+                        self._file_name
+                    ].drop_reference():
+                        del CaptureFile._filenames_with_master_node_lock[self._file_name]
 
     def __del__(self):
         self.close()
@@ -382,20 +409,21 @@ class CaptureFile:
         self.close()
 
     def _acquire_lock_for_writing(self, /):
-        if "msvcrt" in modules:
-            # we must be on windows
-            lseek(self._file.fileno(), CaptureFile._lock_start_position, SEEK_SET)
-            msvcrt.locking(  # noqa
-                self._file.fileno(), msvcrt.LK_LOCK, CaptureFile._lock_size  # noqa
-            )
-        else:
-            # we are probably on some Unix variant
-            result = fcntl.lockf(
-                self._file.fileno(),
-                fcntl.LOCK_EX | fcntl.LOCK_NB,
-                CaptureFile._lock_size,
-                CaptureFile._lock_start_position,
-            )
+        if self.use_os_file_locking:
+            if "msvcrt" in modules:
+                # we must be on windows
+                lseek(self._file.fileno(), CaptureFile._lock_start_position, SEEK_SET)
+                msvcrt.locking(  # noqa
+                    self._file.fileno(), msvcrt.LK_LOCK, CaptureFile._lock_size  # noqa
+                )
+            else:
+                # we are probably on some Unix variant
+                result = fcntl.lockf(
+                    self._file.fileno(),
+                    fcntl.LOCK_EX | fcntl.LOCK_NB,
+                    CaptureFile._lock_size,
+                    CaptureFile._lock_start_position,
+                )
 
     @contextmanager
     def _acquire_master_nodes_lock(self, /):
@@ -407,35 +435,41 @@ class CaptureFile:
 
     def _acquire_master_nodes_lock_internal(self, lock: bool, /):
         assert self._file
-        lock_size = self._config.master_node_size * 2
-        if "msvcrt" in modules:
-            lseek(self._file.fileno(), self._config.page_size, SEEK_SET)
-            # we must be on windows
-            # added comments below to suppress my-py errors when we are viewing code on Linux
-            lock_mode = msvcrt.LK_LOCK if lock else msvcrt.LK_UNLCK  # type: ignore[attr-defined]
-            msvcrt.locking(self._file.fileno(), lock_mode, lock_size)  # type: ignore[attr-defined]
+        if not self._new_is_in_progress:
+            # Master node locks are not used for new files since the temporary
+            # file cannot be in use by any other process
+            CaptureFile._filenames_with_master_node_lock[self._file_name].lock(lock)
+            if self.use_os_file_locking:
+                lock_size = self._config.master_node_size * 2
+                if "msvcrt" in modules:
+                    # we must be on windows
+                    lseek(self._file.fileno(), self._config.page_size, SEEK_SET)
+                    lock_mode = msvcrt.LK_RLCK if lock else msvcrt.LK_UNLCK  # type: ignore[attr-defined]
+                    # lock_mode = msvcrt.LK_LOCK if lock else msvcrt.LK_UNLCK  # type: ignore[attr-defined]
+                    msvcrt.locking(self._file.fileno(), lock_mode, lock_size)  # type: ignore[attr-defined]
+                    # added line comments above to suppress my-py errors when we are viewing code on Linux
 
-            # On 2021-09-26 discovered that on Windows 10 buffer reads after the
-            # lock have incorrect bytes after the first 4k bytes if read in
-            # partial pages. E.g. read 4 bytes then read more than 4k more
-            # bytes. The bytes that appeared after the 4k were the original 4
-            # bytes read. This only happened if a read from position 0 happened
-            # before the lock. Reading a page from the file after the lock
-            # seemed to fix the issue. Reading more than 4k to start did not
-            # help
-            self._file.seek(self._config.page_size)
-            self._file.read(self._config.page_size)
-        else:
-            # we are probably on some Unix variant
-            # added comments below to suppress my-py errors when we are viewing code on Windows
-            lock_type = fcntl.LOCK_EX if self.to_write else fcntl.LOCK_SH  # type: ignore[attr-defined]
-            lock_mode = lock_type if lock else fcntl.LOCK_UN  # type: ignore[attr-defined]
-            fcntl.lockf(  # type: ignore[attr-defined]
-                self._file.fileno(),
-                lock_mode,
-                lock_size,
-                self._config.page_size,
-            )
+                    # On 2021-09-26 discovered that on Windows 10 buffer reads after the
+                    # lock have incorrect bytes after the first 4k bytes if read in
+                    # partial pages. E.g. read 4 bytes then read more than 4k more
+                    # bytes. The bytes that appeared after the 4k were the original 4
+                    # bytes read. This only happened if a read from position 0 happened
+                    # before the lock. Reading a page from the file after the lock
+                    # seemed to fix the issue. Reading more than 4k to start did not
+                    # help
+                    self._file.seek(self._config.page_size)
+                    self._file.read(self._config.page_size)
+                else:
+                    # we are probably on some Unix variant
+                    lock_type = fcntl.LOCK_EX if self.to_write else fcntl.LOCK_SH  # type: ignore[attr-defined]
+                    lock_mode = lock_type if lock else fcntl.LOCK_UN  # type: ignore[attr-defined]
+                    # added line comments above to suppress my-py errors when we are viewing code on Windows
+                    fcntl.lockf(  # type: ignore[attr-defined]
+                        self._file.fileno(),
+                        lock_mode,
+                        lock_size,
+                        self._config.page_size,
+                    )
 
     def get_metadata(self, /) -> Optional[bytes]:
         """Returns the binary metadata that was stored in the capture file on
@@ -860,7 +894,7 @@ class CaptureFile:
 
         if not self.to_write:
             raise CaptureFileNotOpenForWrite(
-                f'Cannot commit "{self.file_name}" because it is not open for writting.'
+                f'Cannot commit "{self.file_name}" because it is not open for writing.'
             )
 
         self._file.flush()
@@ -945,9 +979,20 @@ class CaptureFileConfiguration:
         self.full_node_struct = Struct(">" + "QL" * self.fan_out)
 
     @classmethod
-    def read(cls, file, /) -> "CaptureFileConfiguration":
+    def read(cls, file: IO[bytes], /) -> "CaptureFileConfiguration":
         file.seek(0)
-        buffer = file.read(cls.struct.size)
+        for _ in range(30):
+            # Retry every 0.1 seconds for 3 seconds in case the master node lock
+            # interferes with the reading. This interference was observed in
+            # Windows 11 on 2022-06-04 where simply having a master node lock
+            # prevented the first few bytes of the file from being read even
+            # though they are not part of the lock range.
+            try:
+                buffer = file.read(cls.struct.size)
+            except PermissionError:
+                sleep(0.1)
+            else:
+                break
         (
             header,
             version,
@@ -1379,6 +1424,39 @@ class BytesStream(BytesIO):
         self.write(b"\0" * (end_position - self.tell()))
 
 
+@dataclass
+class ReferenceCountedLock:
+    _reference_count: int = 0
+    _lock: Lock = Lock()
+
+    def add_reference(self) -> None:
+        self._reference_count += 1
+
+    def drop_reference(self) -> bool:
+        """Returns True when the last reference has been dropped to indicate
+        this lock is no longer in use and it is time to clear any references to
+        this lock"""
+        self._reference_count -= 1
+        return self._reference_count == 0
+
+    def lock(self, lock: bool) -> None:
+        if lock:
+            self._lock.acquire()
+        else:
+            self._lock.release()
+
+
+def leaf_to_root_path(position: int, height: int, fan_out: int, /) -> List[int]:
+    """Compute the path of child indexes from the leaf through the nodes to the
+    root."""
+
+    path = [0] * height
+    for i in range(height):
+        position, path[i] = divmod(position, fan_out)
+
+    return path
+
+
 class CaptureFileAlreadyOpen(Exception):
     pass
 
@@ -1393,14 +1471,3 @@ class CaptureFileNotOpenForWrite(Exception):
 
 class InvalidCaptureFile(Exception):
     pass
-
-
-def leaf_to_root_path(position: int, height: int, fan_out: int, /) -> List[int]:
-    """Compute the path of child indexes from the leaf through the nodes to the
-    root."""
-
-    path = [0] * height
-    for i in range(height):
-        position, path[i] = divmod(position, fan_out)
-
-    return path
