@@ -9,7 +9,11 @@ If the capture file does not already exist and it is opened for write, or if `fo
 
 The `encoding` argument is used to decode records that are returned. The default is `utf8`, which means the binary records stored in the capture file will be decoded into strings using the utf8 encoding before being returned. If `encoding=None` is set, then the raw bytes will be returned. All of the encodings available at https://docs.python.org/3/library/codecs.html#standard-encodings are valid. 
 
-Only one process can open a capture file for writing at a time. Multiple processes can open the same capture file for read simultaneously with each other and with one process that opens it for write. 
+To ensure only one process can open a capture file for writing at a time set `use_os_file_locking` to True. Multiple processes can always open the same capture file for read simultaneously with each other and with one process that opens it for write. 
+
+Single process but multi-threaded applications do not need `use_os_file_locking` to be True because the CaptureFile module will manage contention using in-memory locks. File locking in some Linux operating/file systems does not work well across servers and even sometimes on a single server so be sure to verify any specific scenario that depends on file locking. 
+
+By default the CaptureFile is tuned for a commit size of approximately 32KB by having the default value of `compression_block_size` set to 32768. Any amount less than this is re-written every commit until the amount of data equals or exceeds this number at which point the data is compressed, written out and (mostly) never re-written again. If commits will typically contain substantially more than 32KB of data, setting `compression_block_size` to a larger number can improve the amount of compression obtained, resulting in a smaller CaptureFile. 
 
 An `InvalidCaptureFile` exception is raised if this constructor is used to open a file that is not a valid capture file, is in an unsupported version of the capture file format, or is a corruptted. 
 
@@ -20,10 +24,12 @@ An `InvalidCaptureFile` exception is raised if this constructor is used to open 
 ```python
 __init__(
     file_name: str,
-    to_write: InitVar[bool] = False,
+    to_write: bool = False,
     initial_metadata: InitVar[Optional[bytes]] = None,
     force_new_empty_file: InitVar[bool] = False,
-    encoding: Optional[str] = 'utf_8'
+    encoding: Optional[str] = 'utf_8',
+    use_os_file_locking: bool = False,
+    compression_block_size: InitVar[int] = 32768
 ) → None
 ```
 
@@ -36,7 +42,7 @@ __init__(
 
 ---
 
-<a href="..\CaptureFile\CaptureFile.py#L783"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="..\CaptureFile\CaptureFile.py#L851"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>method</kbd> `add_record`
 
@@ -54,7 +60,7 @@ If the capture file is open for read but not for write, then it will raise a `Ca
 
 ---
 
-<a href="..\CaptureFile\CaptureFile.py#L167"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="..\CaptureFile\CaptureFile.py#L211"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>method</kbd> `close`
 
@@ -70,7 +76,7 @@ If this capture file is already closed, then this call does nothing.
 
 ---
 
-<a href="..\CaptureFile\CaptureFile.py#L827"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="..\CaptureFile\CaptureFile.py#L896"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>method</kbd> `commit`
 
@@ -90,7 +96,7 @@ If it is not open for write then this method will raise a `CaptureFileNotOpenFor
 
 ---
 
-<a href="..\CaptureFile\CaptureFile.py#L433"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="..\CaptureFile\CaptureFile.py#L497"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>method</kbd> `get_metadata`
 
@@ -106,7 +112,7 @@ If this capture file is not open, then this method will raise a `CaptureFileNotO
 
 ---
 
-<a href="..\CaptureFile\CaptureFile.py#L112"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="..\CaptureFile\CaptureFile.py#L147"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>method</kbd> `open`
 
@@ -128,7 +134,7 @@ If any of these conditions are violated, then then this method will raise a `Cap
 
 ---
 
-<a href="..\CaptureFile\CaptureFile.py#L618"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="..\CaptureFile\CaptureFile.py#L684"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>method</kbd> `record_at`
 
@@ -148,7 +154,7 @@ If this capture file is not open, then this method will raise a `CaptureFileNotO
 
 ---
 
-<a href="..\CaptureFile\CaptureFile.py#L673"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="..\CaptureFile\CaptureFile.py#L741"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>method</kbd> `record_count`
 
@@ -160,7 +166,7 @@ Returns the number of records available when the file was opened or last refresh
 
 ---
 
-<a href="..\CaptureFile\CaptureFile.py#L516"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="..\CaptureFile\CaptureFile.py#L581"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>method</kbd> `record_generator`
 
@@ -180,7 +186,7 @@ If this capture file is not open, then this method will raise a `CaptureFileNotO
 
 ---
 
-<a href="..\CaptureFile\CaptureFile.py#L307"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="..\CaptureFile\CaptureFile.py#L363"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>method</kbd> `refresh`
 
@@ -196,7 +202,7 @@ If this capture file is not open, then this method will raise a `CaptureFileNotO
 
 ---
 
-<a href="..\CaptureFile\CaptureFile.py#L456"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="..\CaptureFile\CaptureFile.py#L520"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>method</kbd> `set_metadata`
 

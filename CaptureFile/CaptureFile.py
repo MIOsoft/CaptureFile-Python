@@ -36,10 +36,10 @@ class CaptureFile:
 
     If the capture file does not already exist and it is opened for write, or if
     `force_new_empty_file` is True, then a new file will be created and the
-    initial value for its metadata will be the passed `initial_metadata`.
-    These are the only cases where the passed `initial_metadata` is used, and
-    it is provided as a way of optionally ensuring that a capture file always
-    has metadata even when it is first created.
+    initial value for its metadata will be the passed `initial_metadata`. These
+    are the only cases where the passed `initial_metadata` is used, and it is
+    provided as a way of optionally ensuring that a capture file always has
+    metadata even when it is first created.
 
     The `encoding` argument is used to decode records that are returned. The
     default is `utf8`, which means the binary records stored in the capture file
@@ -48,9 +48,26 @@ class CaptureFile:
     encodings available at
     https://docs.python.org/3/library/codecs.html#standard-encodings are valid.
 
-    Only one process can open a capture file for writing at a time. Multiple
-    processes can open the same capture file for read simultaneously with each
-    other and with one process that opens it for write.
+    To ensure only one process can open a capture file for writing at a time set
+    `use_os_file_locking` to True. Multiple processes can always open the same
+    capture file for read simultaneously with each other and with one process
+    that opens it for write.
+
+    Single process but multi-threaded applications do not need
+    `use_os_file_locking` to be True because the CaptureFile module will manage
+    contention using in-memory locks. File locking in some Linux operating/file
+    systems does not work well across servers and even sometimes on a single
+    server so be sure to verify any specific scenario that depends on file
+    locking.
+
+    By default the CaptureFile is tuned for a commit size of approximately 32KB
+    by having the default value of `compression_block_size` set to 32768. Any
+    amount less than this is re-written every commit until the amount of data
+    equals or exceeds this number at which point the data is compressed, written
+    out and (mostly) never re-written again. If commits will typically contain
+    substantially more than 32KB of data, setting `compression_block_size` to a
+    larger number can improve the amount of compression obtained, resulting in a
+    smaller CaptureFile.
 
     An `InvalidCaptureFile` exception is raised if this constructor is used to
     open a file that is not a valid capture file, is in an unsupported version
@@ -81,6 +98,7 @@ class CaptureFile:
     force_new_empty_file: InitVar[bool] = False
     encoding: Optional[str] = "utf_8"
     use_os_file_locking: bool = False
+    compression_block_size: InitVar[int] = 32768
 
     _file_name: Path = field(init=False)
     """A "Path" instance of file_name set during __post_init__"""
@@ -94,7 +112,7 @@ class CaptureFile:
     _compression_block: "BytesStream" = field(init=False)
 
     _current_master_node: "MasterNode" = field(init=False)
-    
+
     _new_is_in_progress: bool = field(init=False)
 
     _record_count: int = field(init=False)
@@ -106,6 +124,7 @@ class CaptureFile:
         self,
         initial_metadata: Optional[bytes],
         force_new_empty_file: bool,
+        compression_block_size: int,
     ):
         self._block_cache = lru_cache(maxsize=10)(self._block_cache_method)
         self._full_node_cache = lru_cache(maxsize=10)(self._full_node_cache_method)
@@ -114,7 +133,7 @@ class CaptureFile:
 
         if force_new_empty_file or (self.to_write and not self._file_name.is_file()):
             self._new_is_in_progress = True
-            self._new_file(initial_metadata)
+            self._new_file(initial_metadata, compression_block_size)
         self._new_is_in_progress = False
         self.open(self.to_write)
 
@@ -209,12 +228,14 @@ class CaptureFile:
                     if CaptureFile._filenames_with_master_node_lock[
                         self._file_name
                     ].drop_reference():
-                        del CaptureFile._filenames_with_master_node_lock[self._file_name]
+                        del CaptureFile._filenames_with_master_node_lock[
+                            self._file_name
+                        ]
 
     def __del__(self):
         self.close()
 
-    def _new_file(self, initial_metadata: Optional[bytes]):
+    def _new_file(self, initial_metadata: Optional[bytes], compression_block_size: int):
         """Creates a new capture file with name `file_name`.
 
         If the file already exists, it is overwritten by the newly created file.
@@ -231,7 +252,9 @@ class CaptureFile:
                 )
             CaptureFile._filenames_opened_for_write.add(self._file_name)
 
-        self._config = CaptureFileConfiguration()
+        self._config = CaptureFileConfiguration(
+            compression_block_size=compression_block_size
+        )
         self._init_compression_block()
 
         # First build the capture file as a temporary file so that we never have
@@ -595,7 +618,7 @@ class CaptureFile:
             starting_record_number - 1,
             rightmost_path,
             height,
-            self._config.fan_out ** height,
+            self._config.fan_out**height,
         )
 
     def _record_generator(
