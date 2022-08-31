@@ -71,7 +71,7 @@ class CaptureFile:
 
     An `InvalidCaptureFile` exception is raised if this constructor is used to
     open a file that is not a valid capture file, is in an unsupported version
-    of the capture file format, or is a corruptted.
+    of the capture file format, or is a corrupted.
     """
 
     _compression_level: ClassVar[int] = -1
@@ -546,7 +546,7 @@ class CaptureFile:
         if not self.to_write:
             raise CaptureFileNotOpenForWrite(
                 f'Cannot set the metadata of "{self.file_name}" because it is not open'
-                " for writting."
+                " for writing."
             )
 
         self._metadata = new_metadata
@@ -581,7 +581,7 @@ class CaptureFile:
     def record_generator(
         self, starting_record_number: int = 1
     ) -> Generator[Record, None, None]:
-        """Returns a generator of records begining at `starting_record_number`
+        """Returns a generator of records beginning at `starting_record_number`
         that continues until the end of the file as it existed when
         `record_generator` was called.
 
@@ -605,7 +605,7 @@ class CaptureFile:
         if starting_record_number < 1:
             raise IndexError
 
-        # only the rightmost path is mutable so grabing a copy of it ensures
+        # only the rightmost path is mutable so grabbing a copy of it ensures
         # that the generator can continue to work even if records are inserted
         # after the generator was created although the new records will not be
         # returned. If that is desired then a new record_generator should be
@@ -724,7 +724,7 @@ class CaptureFile:
             if child_index != len(current_rightmost_node.children):
                 break
 
-        # get first persistent child's data cooridnates. This child will refer
+        # get first persistent child's data coordinates. This child will refer
         # to either the record or the root of a perfect sub-tree of which no
         # decendant can be a rightmost node of the top level tree.
         current_child_coordinates = current_rightmost_node.children[child_index]
@@ -781,7 +781,7 @@ class CaptureFile:
         page increments.
 
         Remaining partial page data is held in the master node until next time
-        when it is written as the begining of the first full page."""
+        when it is written as the beginning of the first full page."""
 
         assert self._file
         pos_in_last_page = self._file_limit() % self._config.page_size
@@ -841,7 +841,7 @@ class CaptureFile:
 
     def _add_data_block(self, data_block: bytes, /) -> "DataCoordinates":
         """Add the passed data block to the file without committing it and return its
-        cooridnates"""
+        coordinates"""
 
         coordinates_for_new_record = self._coordinates_for_next_new_data_block()
         self._compression_block.write_sized(data_block)
@@ -870,7 +870,7 @@ class CaptureFile:
         if not self.to_write:
             raise CaptureFileNotOpenForWrite(
                 f'Cannot add a record to "{self.file_name}" because it is not open for'
-                " writting."
+                " writing."
             )
 
         self._current_master_node.rightmost_path.add_child_to_rightmost_node(
@@ -940,7 +940,7 @@ class CaptureFileConfiguration:
     directly from its constructor"""
 
     version: int = 2
-    """The version indicates the compatability of code with file structure.
+    """The version indicates the compatibility of code with file structure.
 
     Code with a version higher than the one stored in file should be capable of
     reading and writing to the file but a file with a higher version number than
@@ -969,7 +969,7 @@ class CaptureFileConfiguration:
     full_node_struct: Struct = field(init=False)
 
     current_version: ClassVar[int] = 2
-    """The code's current verision which can support any earlier version
+    """The code's current version which can support any earlier version
     recorded in the file"""
 
     capture_file_type: ClassVar[bytes] = b"MioCapture\0"
@@ -986,7 +986,7 @@ class CaptureFileConfiguration:
         self.master_node_size = self.page_size * 2 + self.compression_block_size
 
         # The first master_node starts at page_size because the entire first
-        # page is reserved for the permantent file metadata even though very
+        # page is reserved for the permanent file metadata even though very
         # little of it is used. This fact is also used in
         # compress_and_flush_if_full to know for certain no writing is happening
         # on the first page after the file is created even across multiple OS
@@ -1056,7 +1056,7 @@ class MasterNode:
 
     There are two MasterNodes recorded in the capture file so that there is
     always a backup of the previous MasterNode if there is a problem while
-    writting out the current MasterNode (for example if the computer is turned
+    writing out the current MasterNode (for example if the computer is turned
     off half way through the write)
     """
 
@@ -1133,7 +1133,7 @@ class MasterNode:
         """Return the absolute starting position of where to start writing the
         current master node in the capture file.
 
-        There are two possible starting postitions for the two possible
+        There are two possible starting positions for the two possible
         alternate master nodes.
 
         A master node with an odd serial number is written at the first position
