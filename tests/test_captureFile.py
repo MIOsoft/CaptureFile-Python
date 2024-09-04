@@ -338,7 +338,7 @@ def test_timing_of_iterator():
 def test_record_generator_directly():
     start = time.time()
     cfr = CaptureFile(file_name_1)
-    number_of_records = 1_000_000
+    number_of_records = 10_000_000
     start_record = 1
     rg = cfr.record_generator(start_record)
     for i in range(start_record, start_record + number_of_records):

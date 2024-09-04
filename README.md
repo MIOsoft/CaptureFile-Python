@@ -40,7 +40,6 @@ API](https://github.com/MIOsoft/CaptureFile-Python/blob/master/docs/CaptureFile.
 The detailed description covers several useful APIs and parameters that are not
 covered in the Quickstart below.
 
-To work with capture files visually, you can use the free [MIObdt](https://miosoft.com/miobdt/) application.
 
 ## Install
 
